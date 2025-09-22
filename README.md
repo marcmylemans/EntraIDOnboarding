@@ -22,13 +22,13 @@ Install-Module Microsoft.Graph
 ## Quick start
 1. **Bootstrap Entra**  
    ```powershell
-   pwsh ./deploy/bootstrap-entra.ps1
+   ./deploy/bootstrap-entra.ps1
    ```
    Copy values from the printed object (and `onboarding.env.json`). Make sure a Global Admin grants **admin consent** for the app permissions.
 
 2. **Provision SharePoint**  
    ```powershell
-   pwsh ./deploy/provision-spo.ps1
+   ./deploy/provision-spo.ps1
    ```
 
 3. **Create environment variables** in Power Platform (names from `docs/EnvironmentVariables.md`).
