@@ -13,6 +13,12 @@ This repo skeleton lets you deploy a reusable onboarding/offboarding setup to an
 
 ---
 
+## Prerequisites
+
+```powershell
+Install-Module Microsoft.Graph
+```
+
 ## Quick start
 1. **Bootstrap Entra**  
    ```powershell
