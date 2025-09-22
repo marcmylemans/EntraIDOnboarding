@@ -1,3 +1,6 @@
+# provision-spo-pnp.ps1
+# Requires: Install-Module PnP.PowerShell -Scope CurrentUser
+
 param(
   [Parameter(Mandatory=$true)][string]$AdminUrl,
   [Parameter(Mandatory=$true)][string]$SiteUrl,
@@ -6,7 +9,7 @@ param(
 
 Import-Module PnP.PowerShell
 
-# ---- Ensure site exists ----
+# ---- Ensure site ----
 Connect-PnPOnline -Url $AdminUrl -Interactive
 try {
     Connect-PnPOnline -Url $SiteUrl -Interactive
@@ -36,19 +39,19 @@ function Ensure-PnPField {
 }
 
 # ---- HR intake columns ----
-Ensure-PnPField -InternalName "FirstName" -DisplayName "First Name" -Type Text -AddToDefaultView
-Ensure-PnPField -InternalName "LastName"  -DisplayName "Last Name"  -Type Text -AddToDefaultView
-Ensure-PnPField -InternalName "JobTitle"  -DisplayName "Job Title"  -Type Text
-Ensure-PnPField -InternalName "Department"-DisplayName "Department" -Type Text
-Ensure-PnPField -InternalName "Manager"   -DisplayName "Manager"    -Type User -Extra @{ SelectionMode="PeopleOnly"; AllowMultipleValues=$false } -AddToDefaultView
-Ensure-PnPField -InternalName "StartDate" -DisplayName "Start Date" -Type DateTime -Extra @{ DisplayFormat="DateOnly" } -AddToDefaultView
+Ensure-PnPField -InternalName "FirstName"     -DisplayName "First Name"     -Type Text     -AddToDefaultView
+Ensure-PnPField -InternalName "LastName"      -DisplayName "Last Name"      -Type Text     -AddToDefaultView
+Ensure-PnPField -InternalName "JobTitle"      -DisplayName "Job Title"      -Type Text
+Ensure-PnPField -InternalName "Department"    -DisplayName "Department"     -Type Text
+Ensure-PnPField -InternalName "Manager"       -DisplayName "Manager"        -Type User     -Extra @{ SelectionMode="PeopleOnly"; AllowMultipleValues=$false } -AddToDefaultView
+Ensure-PnPField -InternalName "StartDate"     -DisplayName "Start Date"     -Type DateTime -Extra @{ DisplayFormat="DateOnly" } -AddToDefaultView
 
 # Choice: Request Type
 if (-not (Get-PnPField -List $listTitle -Identity "RequestType" -ErrorAction SilentlyContinue)) {
     Add-PnPField -List $listTitle -InternalName "RequestType" -DisplayName "Request Type" -Type Choice `
         -Choices @("Onboard","Offboard") -AddToDefaultView | Out-Null
 }
-Ensure-PnPField -InternalName "Notes" -DisplayName "Notes" -Type Note
+Ensure-PnPField -InternalName "Notes"         -DisplayName "Notes"          -Type Note
 
 # Flow write-back columns
 Ensure-PnPField -InternalName "UPN"             -DisplayName "UPN"              -Type Text -AddToDefaultView
