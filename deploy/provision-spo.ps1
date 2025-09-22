@@ -1,54 +1,62 @@
-# provision-spo.ps1  — SharePoint Online Mgmt Shell (SPO) version
-# Requires: Install-Module Microsoft.Online.SharePoint.PowerShell -Scope CurrentUser
-Import-Module Microsoft.Online.SharePoint.PowerShell
+param(
+  [Parameter(Mandatory=$true)][string]$AdminUrl,
+  [Parameter(Mandatory=$true)][string]$SiteUrl,
+  [Parameter(Mandatory=$true)][string]$OwnerUpn
+)
 
-# ==== CONFIG ====
-$AdminUrl     = "https://contoso-admin.sharepoint.com"
-$SiteUrl      = "https://contoso.sharepoint.com/sites/HR-Onboarding"
-$SiteOwnerUpn = "itadmin@contoso.com"
+Import-Module PnP.PowerShell
 
-Connect-SPOService -Url $AdminUrl
-
-# Create site (modern team site without M365 group) if missing
+# ---- Ensure site exists ----
+Connect-PnPOnline -Url $AdminUrl -Interactive
 try {
-    Get-SPOSite -Identity $SiteUrl -ErrorAction Stop | Out-Null
-    Write-Host "Site exists: $SiteUrl"
+    Connect-PnPOnline -Url $SiteUrl -Interactive
 } catch {
-    New-SPOSite -Url $SiteUrl -Owner $SiteOwnerUpn -StorageQuota 1024 -Title "HR Onboarding" -Template "STS#3"
-    Write-Host "Created site: $SiteUrl"
+    Write-Host "Creating site $SiteUrl ..."
+    New-PnPTenantSite -Url $SiteUrl -Title "HR Onboarding" -Owner $OwnerUpn -TimeZone 4 -Template "STS#3" | Out-Null
+    Connect-PnPOnline -Url $SiteUrl -Interactive
 }
 
-# ---- Site Script JSON (single-quoted here-string so $schema isn't expanded) ----
-$siteScript = @'
-{
-  "$schema": "https://developer.microsoft.com/json-schemas/sp/site-design-script-actions.schema.json",
-  "actions": [
-    {
-      "verb": "createSPList",
-      "listName": "New Hires",
-      "templateType": 100,
-      "subactions": [
-        { "verb": "setDescription", "description": "HR intake for onboarding/offboarding" },
-        { "verb": "addSPField", "fieldType": "Text", "displayName": "First Name", "isRequired": true, "internalName": "FirstName" },
-        { "verb": "addSPField", "fieldType": "Text", "displayName": "Last Name",  "isRequired": true, "internalName": "LastName"  },
-        { "verb": "addSPField", "fieldType": "Text", "displayName": "Job Title",  "isRequired": false, "internalName": "JobTitle"  },
-        { "verb": "addSPField", "fieldType": "Text", "displayName": "Department","isRequired": false, "internalName": "Department"},
-        { "verb": "addSPField", "fieldType": "User", "displayName": "Manager",   "isRequired": false, "internalName": "Manager"   },
-        { "verb": "addSPField", "fieldType": "DateTime", "displayName": "Start Date","isRequired": true,"internalName": "StartDate" },
-        { "verb": "addSPField", "fieldType": "Choice", "displayName": "Request Type","isRequired": true,"internalName": "RequestType",
-          "addToDefaultView": true,
-          "choices": ["Onboard","Offboard"]
-        },
-        { "verb": "addSPField", "fieldType": "Note", "displayName": "Notes", "isRequired": false, "internalName": "Notes" }
-      ]
+# ---- Ensure list ----
+$listTitle = "New Hires"
+if (-not (Get-PnPList -Identity $listTitle -ErrorAction SilentlyContinue)) {
+    New-PnPList -Title $listTitle -Template GenericList -OnQuickLaunch -EnableContentTypes:$false | Out-Null
+}
+
+function Ensure-PnPField {
+    param(
+      [string]$InternalName,[string]$DisplayName,[string]$Type,
+      [hashtable]$Extra = @{},[switch]$AddToDefaultView
+    )
+    if (-not (Get-PnPField -List $listTitle -Identity $InternalName -ErrorAction SilentlyContinue)) {
+        Add-PnPField -List $listTitle -InternalName $InternalName -DisplayName $DisplayName -Type $Type @Extra | Out-Null
     }
-  ],
-  "version": 1
+    if ($AddToDefaultView) {
+        Add-PnPView -List $listTitle -Identity "All Items" -Fields $InternalName -UpdateViewFields | Out-Null
+    }
 }
-'@
 
-# Register script and apply design
-$scriptObj = Add-SPOSiteScript -Title "HR Intake Script" -Content $siteScript
-$design    = Add-SPOSiteDesign -Title "Apply HR Intake" -WebTemplate "64" -SiteScripts $scriptObj.Id
-Invoke-SPOSiteDesign -Identity $design.Id -WebUrl $SiteUrl
-Write-Host "Provisioned 'New Hires' list on $SiteUrl"
+# ---- HR intake columns ----
+Ensure-PnPField -InternalName "FirstName" -DisplayName "First Name" -Type Text -AddToDefaultView
+Ensure-PnPField -InternalName "LastName"  -DisplayName "Last Name"  -Type Text -AddToDefaultView
+Ensure-PnPField -InternalName "JobTitle"  -DisplayName "Job Title"  -Type Text
+Ensure-PnPField -InternalName "Department"-DisplayName "Department" -Type Text
+Ensure-PnPField -InternalName "Manager"   -DisplayName "Manager"    -Type User -Extra @{ SelectionMode="PeopleOnly"; AllowMultipleValues=$false } -AddToDefaultView
+Ensure-PnPField -InternalName "StartDate" -DisplayName "Start Date" -Type DateTime -Extra @{ DisplayFormat="DateOnly" } -AddToDefaultView
+
+# Choice: Request Type
+if (-not (Get-PnPField -List $listTitle -Identity "RequestType" -ErrorAction SilentlyContinue)) {
+    Add-PnPField -List $listTitle -InternalName "RequestType" -DisplayName "Request Type" -Type Choice `
+        -Choices @("Onboard","Offboard") -AddToDefaultView | Out-Null
+}
+Ensure-PnPField -InternalName "Notes" -DisplayName "Notes" -Type Note
+
+# Flow write-back columns
+Ensure-PnPField -InternalName "UPN"             -DisplayName "UPN"              -Type Text -AddToDefaultView
+Ensure-PnPField -InternalName "ProvisionStatus" -DisplayName "Provision Status" -Type Text -AddToDefaultView
+Ensure-PnPField -InternalName "ProvisionedUPN"  -DisplayName "Provisioned UPN"  -Type Text
+Ensure-PnPField -InternalName "AadObjectId"     -DisplayName "AAD ObjectId"     -Type Text
+Ensure-PnPField -InternalName "ProvisionedAt"   -DisplayName "Provisioned At"   -Type DateTime -Extra @{ DisplayFormat="DateTime" }
+Ensure-PnPField -InternalName "OffboardStatus"  -DisplayName "Offboard Status"  -Type Text
+Ensure-PnPField -InternalName "DisabledAt"      -DisplayName "Disabled At"      -Type DateTime -Extra @{ DisplayFormat="DateTime" }
+
+Write-Host "✔ SharePoint ready at $SiteUrl — list '$listTitle' provisioned."
